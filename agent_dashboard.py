@@ -5,22 +5,18 @@ from google import genai
 import matplotlib.pyplot as plt
 
 # ==========================================
-# 1. KONFIGURASI AI & DATABASE (VERSI CLOUD FINAL)
+# 1. KONFIGURASI AI & DATABASE (VERSI 2.5 FLASH)
 # ==========================================
 try:
-    # Membaca API Key dari brankas rahasia Streamlit Cloud
     API_KEY = st.secrets["GEMINI_API_KEY"]
-    # Inisialisasi Client standar terbaru Google
     client = genai.Client(api_key=API_KEY)
 except KeyError:
-    st.error("Kunci API tidak ditemukan. Pastikan Anda telah mengisinya di menu 'Advanced settings -> Secrets' di Streamlit Cloud.")
+    st.error("Kunci API tidak ditemukan di Streamlit Secrets.")
     st.stop()
 
-# Nama file database SQLite Anda
 DB_PATH = 'database_daerah.db'
 
 def get_database_schema():
-    """Membaca struktur tabel secara otomatis agar AI memahami konteks data."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
@@ -37,10 +33,9 @@ def get_database_schema():
     return schema_info
 
 # ==========================================
-# 2. LOGIKA AGEN AI (MULTI-STEP REASONING)
+# 2. LOGIKA AGEN AI
 # ==========================================
 def agen_sql(pertanyaan, schema):
-    """Agen 1: Menerjemahkan bahasa manusia menjadi query SQL yang presisi."""
     prompt = f"""
     Kamu adalah Ahli Database PostgreSQL dan SQLite tingkat lanjut.
     Tugasmu membuat query SQL yang valid berdasarkan skema database berikut:
@@ -54,15 +49,14 @@ def agen_sql(pertanyaan, schema):
     
     Pertanyaan user: "{pertanyaan}"
     """
-    # MENGGUNAKAN MODEL 1.5-FLASH (Kuota Gratis Besar & Stabil)
+    # MENGGUNAKAN GEMINI 2.5 FLASH (Mendukung Free Tier 100%)
     response = client.models.generate_content(
-        model='gemini-1.5-flash',
+        model='gemini-2.5-flash',
         contents=prompt
     )
     return response.text.replace('```sql', '').replace('```', '').strip()
 
 def agen_visualisasi(dataframe, pertanyaan):
-    """Agen 2: Membaca hasil data SQL dan menulis kode Python untuk menggambar grafik."""
     df_sample = dataframe.head(5).to_string()
     columns = list(dataframe.columns)
     
@@ -74,23 +68,22 @@ def agen_visualisasi(dataframe, pertanyaan):
     
     Pertanyaan/Tujuan user: "{pertanyaan}"
     
-    Tugas: Tulis skrip Python menggunakan `matplotlib.pyplot as plt` untuk membuat grafik yang paling cocok (Bar, Line, Pie, dll).
-    
+    Tugas: Tulis skrip Python menggunakan `matplotlib.pyplot as plt` untuk membuat grafik.
     Aturan Keras:
     1. Kode harus mendefinisikan variabel `fig, ax = plt.subplots(figsize=(10, 6))`
     2. Dataframe sudah dimuat dengan nama `df`. Dilarang membuat dummy data.
-    3. Putar label sumbu X (rotation=45) agar teks nama daerah yang panjang bisa terbaca.
+    3. Putar label sumbu X (rotation=45) agar terbaca.
     4. KELUARKAN HANYA KODE PYTHON-nya saja, tanpa format markdown ```python.
     """
-    # MENGGUNAKAN MODEL 1.5-FLASH
+    # MENGGUNAKAN GEMINI 2.5 FLASH
     response = client.models.generate_content(
-        model='gemini-1.5-flash',
+        model='gemini-2.5-flash',
         contents=prompt
     )
     return response.text.replace('```python', '').replace('```', '').strip()
 
 # ==========================================
-# 3. ANTARMUKA PENGGUNA (STREAMLIT DASHBOARD)
+# 3. ANTARMUKA PENGGUNA
 # ==========================================
 st.set_page_config(page_title="Dashboard AI Daerah", layout="wide")
 st.title("🤖 AI Data Analyst - Infrastruktur & Agrikultur")
@@ -98,7 +91,7 @@ st.markdown("Tanyakan apa saja tentang data daerah. Tambahkan instruksi **'buatk
 
 skema_db = get_database_schema()
 
-query_user = st.chat_input("Contoh: Tampilkan 5 kabupaten di Jawa Barat dengan jalan mantap terpanjang tahun 2025 beserta grafiknya")
+query_user = st.chat_input("Contoh: Tampilkan 5 kabupaten di Jawa Barat dengan jalan mantap terpanjang beserta grafiknya")
 
 if query_user:
     st.chat_message("user").write(query_user)
@@ -106,9 +99,8 @@ if query_user:
     with st.chat_message("assistant"):
         with st.spinner("Menyusun algoritma pencarian data..."):
             try:
-                # FASE 1: EKSTRAKSI DATA
+                # FASE 1: SQL
                 sql_dihasilkan = agen_sql(query_user, skema_db)
-                
                 with st.expander("🔍 Lihat Query SQL yang Dihasilkan AI"):
                     st.code(sql_dihasilkan, language="sql")
                 
@@ -119,12 +111,11 @@ if query_user:
                 st.write("**Hasil Ekstraksi Data:**")
                 st.dataframe(df_hasil)
                 
-                # FASE 2: VISUALISASI GRAFIK 
+                # FASE 2: GRAFIK
                 kata_kunci = ['grafik', 'chart', 'plot', 'visual']
                 if any(kata in query_user.lower() for kata in kata_kunci) and not df_hasil.empty:
                     with st.spinner("Menggambar visualisasi data..."):
                         kode_python = agen_visualisasi(df_hasil, query_user)
-                        
                         with st.expander("💻 Lihat Kode Python (Matplotlib)"):
                             st.code(kode_python, language="python")
                         
@@ -134,13 +125,11 @@ if query_user:
                         if 'fig' in local_vars:
                             st.pyplot(local_vars['fig'])
                         else:
-                            st.warning("Agen gagal merender format gambar yang standar.")
+                            st.warning("Gagal membuat format gambar standar.")
                             
             except Exception as e:
-                # FASE 3: PENANGANAN ERROR 
                 pesan_error = str(e)
                 if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
-                    st.warning("⏱️ Limit kecepatan Google API tercapai. Mohon tunggu 30 detik sebelum bertanya kembali.")
+                    st.warning("⏱️ Server AI sedang sibuk. Mohon tunggu 30 detik lalu coba lagi.")
                 else:
-                    # Menampilkan detail error asli jika bukan karena limit
                     st.error(f"Terjadi kesalahan teknis: {e}")
