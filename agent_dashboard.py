@@ -5,7 +5,7 @@ from google import genai
 import matplotlib.pyplot as plt
 
 # ==========================================
-# 1. KONFIGURASI AI & DATABASE (VERSI 2.5 FLASH)
+# 1. KONFIGURASI AI & DATABASE
 # ==========================================
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -46,10 +46,12 @@ def agen_sql(pertanyaan, schema):
     2. Tabel dim_wilayah dan fact_agrikultur/fact_jalan/fact_keuangan dihubungkan dengan id_wilayah.
     3. Selalu gunakan JOIN jika membutuhkan nama wilayah.
     4. KELUARKAN HANYA QUERY SQL-nya saja, tanpa penjelasan, tanpa format markdown ```sql.
+    5. SUPER PENTING: Untuk pencarian nama teks (provinsi, kabupaten, komoditas), JANGAN gunakan tanda sama dengan (=). SELALU gunakan fungsi LOWER() dan klausa LIKE dengan wildcard %. 
+       Contoh yang BENAR: LOWER(d.nama_provinsi) LIKE '%jawa barat%'
+       Contoh yang SALAH: d.nama_provinsi = 'Jawa Barat'
     
     Pertanyaan user: "{pertanyaan}"
     """
-    # MENGGUNAKAN GEMINI 2.5 FLASH (Mendukung Free Tier 100%)
     response = client.models.generate_content(
         model='gemini-2.5-flash',
         contents=prompt
@@ -75,7 +77,6 @@ def agen_visualisasi(dataframe, pertanyaan):
     3. Putar label sumbu X (rotation=45) agar terbaca.
     4. KELUARKAN HANYA KODE PYTHON-nya saja, tanpa format markdown ```python.
     """
-    # MENGGUNAKAN GEMINI 2.5 FLASH
     response = client.models.generate_content(
         model='gemini-2.5-flash',
         contents=prompt
@@ -87,7 +88,7 @@ def agen_visualisasi(dataframe, pertanyaan):
 # ==========================================
 st.set_page_config(page_title="Dashboard AI Daerah", layout="wide")
 st.title("🤖 AI Data Analyst - Infrastruktur & Agrikultur")
-st.markdown("Tanyakan apa saja tentang data daerah. Tambahkan instruksi **'buatkan grafik'** jika Anda ingin melihat visualisasi datanya.")
+st.markdown("Tanyakan apa saja tentang data daerah. Tambahkan kata **'buatkan grafik'** jika Anda ingin melihat visualisasi datanya.")
 
 skema_db = get_database_schema()
 
