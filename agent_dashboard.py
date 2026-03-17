@@ -147,5 +147,13 @@ if query_user:
                             st.warning("Agen gagal merender format gambar yang standar.")
                             
             except Exception as e:
-                # Menangkap dan menampilkan error teknis jika ada kesalahan logika AI
-                st.error(f"Terjadi kesalahan saat memproses permintaan: {e}")
+                # -----------------------------------------
+                # FASE 3: PENANGANAN ERROR (ERROR HANDLING)
+                # -----------------------------------------
+                pesan_error = str(e)
+                if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
+                    # Menampilkan pesan peringatan kuning yang elegan jika kuota gratis habis
+                    st.warning("⏱️ Server AI sedang sibuk memproses banyak permintaan atau limit kuota gratis tercapai. Mohon tunggu sekitar 30 detik, lalu coba tanyakan lagi.")
+                else:
+                    # Menampilkan error merah untuk masalah teknis lainnya (sintaks SQL salah, dll)
+                    st.error(f"Terjadi kesalahan teknis: {e}")
