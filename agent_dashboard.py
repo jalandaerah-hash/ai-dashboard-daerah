@@ -18,7 +18,7 @@ except KeyError:
 DB_PATH = 'database_daerah.db'
 
 def get_database_schema():
-    """Fungsi untuk membaca struktur database Anda."""
+    """Membaca struktur tabel database."""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -37,25 +37,24 @@ def get_database_schema():
         return "Database tidak ditemukan."
 
 # ==========================================
-# 2. LOGIKA AI (MENGGUNAKAN 2.0 FLASH)
+# 2. LOGIKA AI (MENGGUNAKAN 1.5-FLASH-8B)
 # ==========================================
 def panggil_ai(prompt):
-    """Fungsi panggil AI dengan jeda otomatis untuk menghindari 'Server Sibuk'."""
+    """Memanggil model 1.5-flash-8b yang paling stabil kuota gratisnya."""
     try:
-        # Kita kembali ke 2.0-flash karena ini yang paling lancar di akun Anda
+        # Model 8b adalah versi paling ringan dengan kuota gratis yang biasanya terbuka
         response = client.models.generate_content(
-            model='gemini-2.0-flash', 
+            model='gemini-1.5-flash-8b', 
             contents=prompt
         )
         return response.text
     except Exception as e:
         err_msg = str(e)
         if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            # Jika sibuk, paksa sistem menunggu 30 detik
-            st.toast("⚠️ Server sibuk, menunggu 30 detik agar kuota pulih...")
-            time.sleep(30)
+            st.toast("⚠️ Server sibuk, mencoba stabilkan koneksi...")
+            time.sleep(15)
             # Coba sekali lagi
-            response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+            response = client.models.generate_content(model='gemini-1.5-flash-8b', contents=prompt)
             return response.text
         raise e
 
@@ -64,7 +63,7 @@ def panggil_ai(prompt):
 # ==========================================
 st.set_page_config(page_title="Chatbot AI Subdit Jalan Daerah", layout="wide")
 st.title("🛣️ Chatbot AI Subdit Jalan Daerah")
-st.markdown("Analisis data jalan dan infrastruktur daerah secara otomatis.")
+st.markdown("Analisis mandiri data jalan dan infrastruktur Subdit Jalan Daerah.")
 
 skema_db = get_database_schema()
 query_user = st.chat_input("Contoh: Tampilkan panjang jalan mantap di Jawa Barat tahun 2025")
@@ -79,11 +78,11 @@ if query_user:
             Pertanyaan: {query_user}. 
             Aturan: Gunakan LOWER() dan LIKE %...% untuk teks daerah."""
             
-            with st.spinner("Mencari data di Subdit..."):
+            with st.spinner("Mengambil data..."):
                 sql_raw = panggil_ai(prompt_sql)
                 sql_clean = sql_raw.replace('```sql', '').replace('```', '').strip()
                 
-                with st.expander("Detail Analisis SQL"):
+                with st.expander("Detail Analisis"):
                     st.code(sql_clean, language="sql")
                 
                 conn = sqlite3.connect(DB_PATH)
@@ -91,17 +90,15 @@ if query_user:
                 conn.close()
             
             if df.empty:
-                st.warning("Data tidak ditemukan. Pastikan ejaan nama daerah sudah benar.")
+                st.warning("Data tidak ditemukan. Cek ejaan nama daerah.")
             else:
-                st.write("**Data ditemukan:**")
+                st.write("**Hasil Data:**")
                 st.dataframe(df)
                 
-                # TAHAP 2: GRAFIK (Hanya jika ada kata kunci grafik)
+                # TAHAP 2: GRAFIK
                 if any(k in query_user.lower() for k in ['grafik', 'chart', 'plot', 'visual']):
-                    # Jeda paksa 3 detik antar permintaan agar tidak terkena limit
-                    time.sleep(3)
-                    
-                    with st.spinner("Membuat visualisasi..."):
+                    time.sleep(2)
+                    with st.spinner("Membuat grafik..."):
                         prompt_grafik = f"Buat kode matplotlib (HANYA KODE) untuk df dengan kolom {list(df.columns)}. fig, ax = plt.subplots(). User ingin: {query_user}"
                         kode_raw = panggil_ai(prompt_grafik)
                         kode_clean = kode_raw.replace('```python', '').replace('```', '').strip()
@@ -111,4 +108,4 @@ if query_user:
                         st.pyplot(local_vars['fig'])
                         
         except Exception as e:
-            st.error(f"Mohon maaf, terjadi kendala teknis: {e}")
+            st.error(f"Mohon maaf, sistem sedang limit: {e}")
