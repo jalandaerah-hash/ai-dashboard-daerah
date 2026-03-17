@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import numpy as np
 from google import genai
 import matplotlib.pyplot as plt
 import time
@@ -37,12 +38,11 @@ def get_database_schema():
         return "Database tidak ditemukan."
 
 # ==========================================
-# 2. LOGIKA AI (KEMBALI KE 2.5-FLASH YANG LANCAR)
+# 2. LOGIKA AI (GEMINI 2.5 FLASH)
 # ==========================================
 def panggil_ai(prompt):
     """Memanggil Gemini 2.5 Flash dengan sistem rem otomatis."""
     try:
-        # Menggunakan model 2.5-flash sesuai petunjuk Anda yang berhasil
         response = client.models.generate_content(
             model='gemini-2.5-flash', 
             contents=prompt
@@ -51,7 +51,6 @@ def panggil_ai(prompt):
     except Exception as e:
         err_msg = str(e)
         if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            # Jika Anda bertanya terlalu cepat, AI akan diam 15 detik lalu mencoba lagi
             st.toast("⚠️ Server merespon terlalu cepat. Menunggu 15 detik agar aman...")
             time.sleep(15)
             response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
@@ -93,11 +92,23 @@ if query_user:
                 st.warning("Data tidak ditemukan. Cek kembali ejaan wilayahnya.")
             else:
                 st.write("**Hasil Data:**")
-                st.dataframe(df)
+                
+                # --- FITUR BARU: PEMISAH RIBUAN ALA INDONESIA ---
+                def format_indonesia(nilai):
+                    # Jika datanya kosong (NaN), biarkan saja
+                    if pd.isna(nilai):
+                        return nilai
+                    # Jika datanya angka (integer atau float), format pakai titik
+                    if isinstance(nilai, (int, float)):
+                        return f"{nilai:,.0f}".replace(",", ".")
+                    return nilai
+                
+                # Tampilkan tabel menggunakan kacamata 'style' agar angka aslinya tidak rusak
+                st.dataframe(df.style.format(format_indonesia))
+                # -----------------------------------------------
                 
                 # TAHAP 2: GRAFIK
                 if any(k in query_user.lower() for k in ['grafik', 'chart', 'plot', 'visual']):
-                    # Jeda wajib 3 detik agar kuota Google tidak kaget menerima 2 tugas sekaligus
                     time.sleep(3) 
                     
                     with st.spinner("Menyiapkan grafik visual..."):
