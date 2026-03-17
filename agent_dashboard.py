@@ -12,132 +12,98 @@ try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     client = genai.Client(api_key=API_KEY)
 except KeyError:
-    st.error("Kunci API tidak ditemukan di Streamlit Secrets.")
+    st.error("API Key belum diset di Streamlit Secrets.")
     st.stop()
 
 DB_PATH = 'database_daerah.db'
 
 def get_database_schema():
+    """Membaca struktur tabel agar AI paham kolom data Anda."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     tables = cursor.fetchall()
-    
     schema_info = ""
     for table in tables:
         table_name = table[0]
         cursor.execute(f"PRAGMA table_info({table_name});")
         columns = cursor.fetchall()
         col_details = ", ".join([f"{col[1]} ({col[2]})" for col in columns])
-        schema_info += f"- Tabel `{table_name}` memiliki kolom: {col_details}\n"
+        schema_info += f"- Tabel `{table_name}`: {col_details}\n"
     conn.close()
     return schema_info
 
 # ==========================================
-# 2. LOGIKA AGEN AI (DENGAN RECOVRY MODE)
+# 2. FUNGSI PANGGIL AI (DENGAN PERLINDUNGAN)
 # ==========================================
-def agen_sql(pertanyaan, schema):
-    prompt = f"""
-    Kamu adalah Ahli Database PostgreSQL dan SQLite tingkat lanjut.
-    Tugasmu membuat query SQL yang valid berdasarkan skema database berikut:
-    {schema}
-    
-    Aturan Keras:
-    1. Hanya gunakan kolom yang ada di skema. 
-    2. Tabel dim_wilayah dan fact_agrikultur/fact_jalan/fact_keuangan dihubungkan dengan id_wilayah.
-    3. Selalu gunakan JOIN jika membutuhkan nama wilayah.
-    4. KELUARKAN HANYA QUERY SQL-nya saja tanpa penjelasan dan tanpa markdown.
-    5. Gunakan LOWER() dan LIKE %...% untuk pencarian teks daerah agar lebih akurat.
-    
-    Pertanyaan user: "{pertanyaan}"
-    """
-    response = client.models.generate_content(
-        model='gemini-2.0-flash',
-        contents=prompt
-    )
-    return response.text.replace('```sql', '').replace('```', '').strip()
-
-def agen_visualisasi(dataframe, pertanyaan):
-    df_sample = dataframe.head(5).to_string()
-    columns = list(dataframe.columns)
-    
-    prompt = f"""
-    Kamu adalah Data Scientist spesialis visualisasi data.
-    Dataframe bernama `df` memiliki kolom: {columns}
-    Contoh data: {df_sample}
-    
-    Tugas: Tulis kode Python matplotlib untuk membuat grafik sesuai pertanyaan: "{pertanyaan}"
-    Aturan:
-    1. Gunakan `fig, ax = plt.subplots(figsize=(10, 6))`.
-    2. Dataframe sudah dimuat dengan nama `df`.
-    3. Putar label X (rotation=45).
-    4. KELUARKAN HANYA KODE PYTHON-nya saja tanpa markdown.
-    """
-    response = client.models.generate_content(
-        model='gemini-2.0-flash',
-        contents=prompt
-    )
-    return response.text.replace('```python', '').replace('```', '').strip()
+def panggil_ai(prompt):
+    """Fungsi pusat untuk memanggil AI dengan proteksi kuota."""
+    try:
+        # Menggunakan model 1.5-flash yang paling stabil kuotanya
+        response = client.models.generate_content(
+            model='gemini-1.5-flash', 
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        if "429" in str(e):
+            st.warning("⏱️ Server Google sedang sangat padat. Tunggu 15 detik...")
+            time.sleep(15)
+            # Coba sekali lagi setelah menunggu
+            response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+            return response.text
+        raise e
 
 # ==========================================
-# 3. ANTARMUKA PENGGUNA (JUDUL BARU)
+# 3. ANTARMUKA CHATBOT (JUDUL BARU)
 # ==========================================
 st.set_page_config(page_title="Chatbot AI Subdit Jalan Daerah", layout="wide")
 st.title("🛣️ Chatbot AI Subdit Jalan Daerah")
-st.markdown("""
-Selamat datang di layanan data mandiri **Subdit Jalan Daerah**. 
-Silakan tanyakan informasi mengenai kondisi jalan, keuangan daerah, atau agrikultur. 
-Gunakan kata **'grafik'** untuk melihat visualisasi data.
-""")
+st.info("Sistem ini terhubung langsung ke database daerah untuk analisis jalan dan agrikultur.")
 
 skema_db = get_database_schema()
-query_user = st.chat_input("Tulis pertanyaan Anda di sini... (Contoh: Tampilkan data jalan di Jawa Barat)")
+query_user = st.chat_input("Tanyakan data jalan atau agrikultur di sini...")
 
 if query_user:
     st.chat_message("user").write(query_user)
     
     with st.chat_message("assistant"):
-        with st.spinner("Menganalisis data..."):
-            try:
-                # FASE 1: SQL
-                sql_dihasilkan = agen_sql(query_user, skema_db)
+        try:
+            # LANGKAH 1: GENERATE SQL
+            prompt_sql = f"""Buatkan query SQLite (HANYA SQL) untuk: {query_user}. 
+            Skema: {skema_db}. 
+            Aturan: Gunakan LOWER() dan LIKE %...% untuk teks."""
+            
+            with st.spinner("Mencari data di database..."):
+                sql_raw = panggil_ai(prompt_sql)
+                sql_clean = sql_raw.replace('```sql', '').replace('```', '').strip()
                 
-                with st.expander("🔍 Lihat Query SQL"):
-                    st.code(sql_dihasilkan, language="sql")
+                with st.expander("Lihat Logika Pencarian (SQL)"):
+                    st.code(sql_clean, language="sql")
                 
+                # Eksekusi Database
                 conn = sqlite3.connect(DB_PATH)
-                df_hasil = pd.read_sql_query(sql_dihasilkan, conn)
+                df = pd.read_sql_query(sql_clean, conn)
                 conn.close()
+            
+            if df.empty:
+                st.warning("Data tidak ditemukan. Coba periksa ejaan nama daerahnya.")
+            else:
+                st.write("**Hasil Data:**")
+                st.dataframe(df)
                 
-                if df_hasil.empty:
-                    st.info("Data tidak ditemukan. Pastikan ejaan nama daerah sudah benar.")
-                else:
-                    st.write("**Hasil Ekstraksi Data:**")
-                    st.dataframe(df_hasil)
+                # LANGKAH 2: GENERATE GRAFIK (Jika ada kata kunci grafik)
+                if any(k in query_user.lower() for k in ['grafik', 'chart', 'plot', 'visual']):
+                    time.sleep(2) # Jeda agar API tidak kaget
                     
-                    # FASE 2: GRAFIK (Hanya jika diminta)
-                    kata_kunci = ['grafik', 'chart', 'plot', 'visual']
-                    if any(kata in query_user.lower() for kata in kata_kunci):
-                        # Jeda singkat 2 detik untuk menghindari rate limit antar-request
-                        time.sleep(2) 
+                    with st.spinner("Menyiapkan grafik..."):
+                        prompt_grafik = f"Tulis kode Python matplotlib (HANYA KODE) untuk df dengan kolom {list(df.columns)}. fig, ax = plt.subplots(). User ingin: {query_user}"
+                        kode_raw = panggil_ai(prompt_grafik)
+                        kode_clean = kode_raw.replace('```python', '').replace('```', '').strip()
                         
-                        with st.spinner("Menggambar grafik..."):
-                            kode_python = agen_visualisasi(df_hasil, query_user)
-                            
-                            with st.expander("💻 Lihat Kode Grafik"):
-                                st.code(kode_python, language="python")
-                            
-                            local_vars = {"df": df_hasil, "plt": plt}
-                            exec(kode_python, globals(), local_vars)
-                            
-                            if 'fig' in local_vars:
-                                st.pyplot(local_vars['fig'])
-                            else:
-                                st.warning("AI gagal menyusun grafik.")
-                            
-            except Exception as e:
-                pesan_error = str(e)
-                if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
-                    st.warning("⏱️ Server AI sedang sangat padat. Mohon tunggu 30-60 detik tanpa menekan Enter agar kuota API Anda pulih kembali.")
-                else:
-                    st.error(f"Terjadi kesalahan teknis: {e}")
+                        local_vars = {"df": df, "plt": plt}
+                        exec(kode_clean, globals(), local_vars)
+                        st.pyplot(local_vars['fig'])
+                        
+        except Exception as e:
+            st.error(f"Mohon maaf, terjadi kendala: {e}")
