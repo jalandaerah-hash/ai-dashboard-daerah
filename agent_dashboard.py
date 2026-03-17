@@ -1,22 +1,20 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-import google.generativeai as genai
+from google import genai # MENGGUNAKAN LIBRARY BARU GOOGLE
 import matplotlib.pyplot as plt
 
 # ==========================================
-# 1. KONFIGURASI AI & DATABASE (VERSI CLOUD)
+# 1. KONFIGURASI AI & DATABASE (VERSI CLOUD BARU)
 # ==========================================
-# Mengambil API Key secara aman dari "brankas rahasia" Streamlit Cloud
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=API_KEY)
+    # Inisialisasi Client standar terbaru Google
+    client = genai.Client(api_key=API_KEY)
 except KeyError:
     st.error("Kunci API tidak ditemukan. Pastikan Anda telah mengisinya di menu 'Advanced settings -> Secrets' di Streamlit Cloud.")
     st.stop()
 
-# Menggunakan model AI yang cepat untuk Text-to-SQL
-model = genai.GenerativeModel('gemini-1.5-flash')
 DB_PATH = 'database_daerah.db'
 
 def get_database_schema():
@@ -54,7 +52,11 @@ def agen_sql(pertanyaan, schema):
     
     Pertanyaan user: "{pertanyaan}"
     """
-    response = model.generate_content(prompt)
+    # Menggunakan metode pemanggilan terbaru
+    response = client.models.generate_content(
+        model='gemini-1.5-flash',
+        contents=prompt
+    )
     return response.text.replace('```sql', '').replace('```', '').strip()
 
 def agen_visualisasi(dataframe, pertanyaan):
@@ -77,7 +79,10 @@ def agen_visualisasi(dataframe, pertanyaan):
     3. Putar label sumbu X (rotation=45) agar teks panjang terbaca.
     4. KELUARKAN HANYA KODE PYTHON-nya saja, tanpa format markdown ```python.
     """
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model='gemini-1.5-flash',
+        contents=prompt
+    )
     return response.text.replace('```python', '').replace('```', '').strip()
 
 # ==========================================
@@ -96,7 +101,6 @@ if query_user:
     with st.chat_message("assistant"):
         with st.spinner("Menyusun algoritma pencarian..."):
             try:
-                # Eksekusi SQL
                 sql_dihasilkan = agen_sql(query_user, skema_db)
                 with st.expander("🔍 Lihat Query SQL"):
                     st.code(sql_dihasilkan, language="sql")
@@ -108,7 +112,6 @@ if query_user:
                 st.write("**Hasil Ekstraksi Data:**")
                 st.dataframe(df_hasil)
                 
-                # Eksekusi Grafik jika diminta
                 kata_kunci = ['grafik', 'chart', 'plot', 'visual']
                 if any(kata in query_user.lower() for kata in kata_kunci) and not df_hasil.empty:
                     with st.spinner("Menggambar visualisasi..."):
