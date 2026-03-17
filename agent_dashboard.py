@@ -54,16 +54,15 @@ def agen_sql(pertanyaan, schema):
     
     Pertanyaan user: "{pertanyaan}"
     """
-    # Menggunakan model Gemini 2.0 Flash terbaru
+    # MENGGUNAKAN MODEL 1.5-FLASH (Kuota Gratis Besar & Stabil)
     response = client.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-1.5-flash',
         contents=prompt
     )
     return response.text.replace('```sql', '').replace('```', '').strip()
 
 def agen_visualisasi(dataframe, pertanyaan):
     """Agen 2: Membaca hasil data SQL dan menulis kode Python untuk menggambar grafik."""
-    # Memberikan sampel data agar AI mengerti isi tabel yang dihasilkan
     df_sample = dataframe.head(5).to_string()
     columns = list(dataframe.columns)
     
@@ -83,8 +82,9 @@ def agen_visualisasi(dataframe, pertanyaan):
     3. Putar label sumbu X (rotation=45) agar teks nama daerah yang panjang bisa terbaca.
     4. KELUARKAN HANYA KODE PYTHON-nya saja, tanpa format markdown ```python.
     """
+    # MENGGUNAKAN MODEL 1.5-FLASH
     response = client.models.generate_content(
-        model='gemini-2.0-flash',
+        model='gemini-1.5-flash',
         contents=prompt
     )
     return response.text.replace('```python', '').replace('```', '').strip()
@@ -92,27 +92,21 @@ def agen_visualisasi(dataframe, pertanyaan):
 # ==========================================
 # 3. ANTARMUKA PENGGUNA (STREAMLIT DASHBOARD)
 # ==========================================
-# Konfigurasi tampilan halaman web
 st.set_page_config(page_title="Dashboard AI Daerah", layout="wide")
 st.title("🤖 AI Data Analyst - Infrastruktur & Agrikultur")
 st.markdown("Tanyakan apa saja tentang data daerah. Tambahkan instruksi **'buatkan grafik'** jika Anda ingin melihat visualisasi datanya.")
 
-# Memuat skema database ke memori
 skema_db = get_database_schema()
 
-# Kotak input obrolan utama
 query_user = st.chat_input("Contoh: Tampilkan 5 kabupaten di Jawa Barat dengan jalan mantap terpanjang tahun 2025 beserta grafiknya")
 
 if query_user:
-    # Menampilkan pertanyaan user di layar
     st.chat_message("user").write(query_user)
     
     with st.chat_message("assistant"):
         with st.spinner("Menyusun algoritma pencarian data..."):
             try:
-                # -----------------------------------------
                 # FASE 1: EKSTRAKSI DATA
-                # -----------------------------------------
                 sql_dihasilkan = agen_sql(query_user, skema_db)
                 
                 with st.expander("🔍 Lihat Query SQL yang Dihasilkan AI"):
@@ -125,9 +119,7 @@ if query_user:
                 st.write("**Hasil Ekstraksi Data:**")
                 st.dataframe(df_hasil)
                 
-                # -----------------------------------------
-                # FASE 2: VISUALISASI GRAFIK (Opsional)
-                # -----------------------------------------
+                # FASE 2: VISUALISASI GRAFIK 
                 kata_kunci = ['grafik', 'chart', 'plot', 'visual']
                 if any(kata in query_user.lower() for kata in kata_kunci) and not df_hasil.empty:
                     with st.spinner("Menggambar visualisasi data..."):
@@ -136,24 +128,19 @@ if query_user:
                         with st.expander("💻 Lihat Kode Python (Matplotlib)"):
                             st.code(kode_python, language="python")
                         
-                        # Mengeksekusi kode Python yang dibuat AI dalam lingkungan tertutup
                         local_vars = {"df": df_hasil, "plt": plt}
                         exec(kode_python, globals(), local_vars)
                         
-                        # Menampilkan grafik ke layar jika berhasil dibuat
                         if 'fig' in local_vars:
                             st.pyplot(local_vars['fig'])
                         else:
                             st.warning("Agen gagal merender format gambar yang standar.")
                             
             except Exception as e:
-                # -----------------------------------------
-                # FASE 3: PENANGANAN ERROR (ERROR HANDLING)
-                # -----------------------------------------
+                # FASE 3: PENANGANAN ERROR 
                 pesan_error = str(e)
                 if "429" in pesan_error or "RESOURCE_EXHAUSTED" in pesan_error:
-                    # Menampilkan pesan peringatan kuning yang elegan jika kuota gratis habis
-                    st.warning("⏱️ Server AI sedang sibuk memproses banyak permintaan atau limit kuota gratis tercapai. Mohon tunggu sekitar 30 detik, lalu coba tanyakan lagi.")
+                    st.warning("⏱️ Limit kecepatan Google API tercapai. Mohon tunggu 30 detik sebelum bertanya kembali.")
                 else:
-                    # Menampilkan error merah untuk masalah teknis lainnya (sintaks SQL salah, dll)
+                    # Menampilkan detail error asli jika bukan karena limit
                     st.error(f"Terjadi kesalahan teknis: {e}")
